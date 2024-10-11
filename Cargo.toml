@@ -6,6 +6,13 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.89"
 clap = { version = "4.5.19", features = ["derive"] }
-hyper = "1.4.1"
+crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
 nakamoto = {version = "0.4.0"}
+redis = "0.27.4"
 tokio = {version = "1.40.0", features = ["rt", "macros","rt-multi-thread"]}
+prost = "0.13.3"
+tonic = {version = "0.12.2",features = ["gzip","zstd"]} 
+
+[build-dependencies]
+prost-build = "0.13.3"
+tonic-build = "0.12.2"

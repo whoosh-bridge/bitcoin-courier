@@ -1,77 +1,37 @@
 mod indexer;
-// mod args;
-mod keygen;
-// mod enums;
+mod args;
+mod masterkey;
+mod enums;
+mod orderbook;
+mod gateway;
+mod cache;
 
-use anyhow::Result;
-
-use indexer::run_indexer;
-
-// async fn app(args: Args) -> Result<()> {
-    
-//     let addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
-//     let listener = TcpListener::bind(addr).await?;
-//     println!("Listening on http://{}", addr);
-//     loop{
-//         // When an incoming TCP connection is received grab a TCP stream for
-//         // client<->server communication.
-//         //
-//         // Note, this is a .await point, this loop will loop forever but is not a busy loop. The
-//         // .await point allows the Tokio runtime to pull the task off of the thread until the task
-//         // has work to do. In this case, a connection arrives on the port we are listening on and
-//         // the task is woken up, at which point the task is then put back on a thread, and is
-//         // driven forward by the runtime, eventually yielding a TCP stream.
-//         let (tcp, _) = listener.accept().await?;
-//         // Use an adapter to access something implementing `tokio::io` traits as if they implement
-//         // `hyper::rt` IO traits.
-//         let io = TokioIo::new(tcp);
-
-//         // Spin up a new task in Tokio so we can continue to listen for new TCP connection on the
-//         // current task without waiting for the processing of the HTTP1 connection we just received
-//         // to finish
-//         tokio::task::spawn(async move {
-//             // Handle the connection from the client using HTTP1 and pass any
-//             // HTTP requests received on that connection to the `hello` function
-//             if let Err(err) = http1::Builder::new()
-//                 .timer(TokioTimer::new())
-//                 .serve_connection(io, service_fn(hello))
-//                 .await
-//             {
-//                 println!("Error serving connection: {:?}", err);
-//             }
-//         });
-//     };
-
-//     // tracing_subscriber::fmt::init();
-
-//     // let addr = std::net::SocketAddr::new(args.address.parse()?, args.port);
-
-//     // let todos = Todos::new();
-//     // let context = Arc::new(RwLock::new(todos));
-
-//     // serve(addr, context, handle).await?;
-//     Ok(())
-// }
-
-
+use anyhow::{Context, Ok, Result};
+use clap::Parser;
+use crossbeam::{channel::{unbounded,Sender}, queue::SegQueue};
+use indexer::{BitcoinListener,ReceivedPayment};
+use enums::{NetworkType,Token};
+use args::Args;
+use masterkey::MasterKey;
+use nakamoto::p2p::fsm::output::Connect;
 
 fn main() -> Result<()> {
-    // let args = Args::parse();
+    if let Result::Ok(args) = Args::try_parse(){
+        let bitcoin_network = match args.network{
+            NetworkType::Mainnet => nakamoto::common::bitcoin::Network::Bitcoin,
+            NetworkType::Testnet => nakamoto::common::bitcoin::Network::Testnet
+        };
+
+        let (receive_address_sender,receive_address_receiver) = unbounded(); 
+        let (order_sender,order_receiver) = unbounded();
     
-    run_indexer()?;
-    // let indexer = thread::spawn(||{
-    //     run_indexer();
-    // });
+        let listener = BitcoinListener::new(bitcoin_network);
+        let listener_handle  = listener.run(receive_address_receiver,order_sender)?;
+        listener_handle.join();
+
+        return Ok(())
+    }
     
-    // tokio::runtime::Builder::new_multi_thread()
-    //     .enable_all()
-    //     .build()
-    //     .unwrap()
-    //     .block_on(async {
-    //         app(args).await;
-    //     });
-    
-    // indexer.join().expect("Couldn't join on the associated thread");;
     Ok(())
 }
 

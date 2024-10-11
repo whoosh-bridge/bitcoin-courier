@@ -1,0 +1,27 @@
+syntax = "proto3";
+package whoosh;
+
+// Generates Payment Uri
+service BitcoinService {
+  // Generate uri to display as QRCode
+  rpc Generate (ExchangeRequest) returns (PaymentUriReply) {}
+  rpc GetQuote (ExchangeRequest) returns (Quote) {} 
+}
+
+// The request message containing the user's name.
+message ExchangeRequest {
+  string name = 1;
+  string target_chain = 2;
+  string target_address = 3;
+  string target_token = 4;
+  string source_token_amount = 5;
+}
+
+message Quote{
+	string target_chain = 1;
+	string estimated_target_token_amount = 2;
+}
+
+message PaymentUriReply {
+  string payment_uri = 1;
+}

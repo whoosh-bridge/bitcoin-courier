@@ -1,5 +1,6 @@
 
 type Reactor = nakamoto::net::poll::Reactor<net::TcpStream>;
+use crossbeam::queue::{ArrayQueue, SegQueue};
 use nakamoto::chain::Transaction;
 use nakamoto::client::traits::Handle;
 use nakamoto::client::{Client, Config, Event, Network};
@@ -7,116 +8,140 @@ use nakamoto::common::bitcoin::bech32::ToBase32;
 use nakamoto::common::bitcoin::secp256k1::ffi::Context;
 use nakamoto::common::bitcoin::secp256k1::{Secp256k1, SecretKey};
 use nakamoto::common::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
-use nakamoto::common::bitcoin::{Address, KeyPair, PrivateKey, PublicKey};
+use nakamoto::common::bitcoin::{Address, KeyPair, PrivateKey, PublicKey, Script};
 use nakamoto::common::bitcoin_hashes::hex::ToHex;
 use nakamoto::common::{bitcoin::network::constants::ServiceFlags,network::Services};
 use std::borrow::Borrow;
 use std::hash::Hash;
 use std::io::Write;
+use std::iter::Map;
 use std::ops::{Add, RangeInclusive};
 use std::str::FromStr;
-use std::thread;
-use std::net;
+use std::thread::{self, JoinHandle};
+use std::{clone, net};
 use std::collections::HashSet;
-use anyhow::Result;
+use anyhow::{Ok, Result};
+use std::time::Duration;
 
-use crate::keygen::MasterKey;
+use crate::masterkey::MasterKey;
+
+use std::sync::Arc;
+use crossbeam::channel::{unbounded, Receiver, Sender};
+
+#[derive(Clone)]
+pub struct ReceiveAddress{
+  script: Script,
+  address: Address
+}
 
 
-pub fn run_indexer () -> anyhow::Result<()>{
+#[derive(Clone)]
+pub struct ReceivedPayment{
+  address: ReceiveAddress,
+  amount: u64,
+  block_height: u64
+}
+
+
+pub struct BitcoinListener{
+  // seed: [u8;32],
+  // masterkey: MasterKey,
+  // watch_list: Vec<Script>,
+  // address_list: Vec<ReceiveAddress>,
+  // account_index: u32,
+  // address_index: u32,
+  network: nakamoto::common::bitcoin::Network
+}
+
+
+impl BitcoinListener{
+  pub fn new(network : nakamoto::common::bitcoin::Network) -> BitcoinListener{
+    
+    
+    BitcoinListener{
+      network               
+    }
+  }
+
+  pub fn run (&self, receive_addresses: Receiver<ReceiveAddress>,received_payments: Sender<ReceivedPayment> ) -> anyhow::Result<JoinHandle<anyhow::Result<()>>>{
+    
     // Create a client using the above network reactor.
     let client = Client::<Reactor>::new()?;
-    let network = nakamoto::common::bitcoin::Network::Testnet;
     
     let client_handle = client.handle();
-
-    
+    let config_network = match self.network {
+      nakamoto::common::bitcoin::Network::Testnet => Network::Testnet,
+      nakamoto::common::bitcoin::Network::Bitcoin => Network::Mainnet,
+      nakamoto::common::bitcoin::Network::Regtest => Network::Regtest,
+      nakamoto::common::bitcoin::Network::Signet => Network::Signet
+    };
     // Run the client on a different thread, to not block the main thread.
-    let config = Config::new(Network::Testnet);    
-    thread::spawn(|| client.run(config).unwrap());    
+    let config = Config::new(config_network);    
+    let peers_thread = thread::spawn(|| client.run(config).unwrap());    
     // Wait for the client to be connected to a peer.
     
     let peers = client_handle.wait_for_peers(5, Services::default())?;    
 
     for peer in peers{
         println!("{}:{}",peer.0,peer.1);                
-    }    
-
-    let seed = b"Qu/E,.qp40ruLCX8GDSYlE2m?:I[|}5,";
-    let masterkey = MasterKey::new(*seed,network);
-    let addresses: &mut HashSet<Address> = &mut HashSet::new();
-
-    let wallet_index:u32 = 0;
-    let last_index = (2u64.pow(32) - 1u64) as u32;    
-
-    for address_index in 0u32..5{
-        let receive_address = masterkey.new_bitcoin_receive_address(0, address_index);
-        addresses.insert(receive_address.clone());    
-        println!("Receive address {} added to watch list",receive_address);
     } 
-    return Ok(());
-    
 
-    let watch_list: Vec<_> = addresses.iter().map(|a| a.script_pubkey()).collect();    
-    client_handle.rescan(3009441..,watch_list.iter().cloned());    
-    
-    
-    let events_queue = client_handle.events();            
-    
-    loop{                
-        let event = events_queue.recv()?;                
+    let handle = thread::spawn(move || -> anyhow::Result<()>{
+      
+      let client_handle_ref = client_handle.clone(); 
+      let receive_addresses_ref = receive_addresses.clone();
+      let mut watch_list = vec![];
+      let mut addresses = vec![];   
 
+      let (tip,tip_header) = client_handle_ref.get_tip()?;
 
-        match event {
-            Event::PeerConnected { addr, link } => {
-                client_handle.get_filters(RangeInclusive::new(3,5));
-            },
-            Event::BlockConnected { header, hash, height } => {
-                println!("block height:{height}");
-            },            
-            Event::PeerDisconnected { addr, reason } => println!("Peer {addr} disconnected."),
-            Event::PeerHeightUpdated { height } => println!("Block {height} updated!"),
-            Event::Synced { height, tip }=> {
-
-            },
-            Event::TxStatusChanged { txid, status } => println!("Transaction {txid} updated to {status} "),            
-            Event::Ready { tip, filter_tip }=>println!("Ready event!"),
-            Event::PeerConnectionFailed { addr, error }=>println!("Peer connection failed!"),
-            Event::BlockDisconnected { header, hash, height } => println!("Block disconnected!"),
-            Event::PeerNegotiated { addr, link, services, height, user_agent, version } => println!("Peer negotiated!"),
-            Event::BlockMatched { hash, header, height, transactions } =>{
-                println!("Block matched {height}");
+      client_handle_ref.rescan(3009441..,watch_list.iter().cloned());    
                 
-                for tx in transactions{
-                    let tx_hash =  tx.txid().to_hex();
-                    println!("transaction hash: {tx_hash}");
-                    
-                    for txi in tx.input {
-                        
-                        match Address::from_script(&txi.script_sig,network){
-                            Ok(addr) =>println!("Transaction source {}",addr.to_string()),
-                            _=>()
-                        }
-                        
-                    }
-                    for txo in tx.output{
-                        match Address::from_script(&txo.script_pubkey,network){
-                            Ok(addr)=>println!("Transaction received {} satoshi from {}",txo.value,addr.to_string()),
-                            _=>()
-                        }
-                        
-                    }
-                    
-                }
+      let events_queue = client_handle_ref.events();       
+
+      loop{                
+        if let Result::Ok(addr) = receive_addresses_ref.try_recv(){
+          addresses.push(addr);
+        }
+        if let Result::Ok(event) = events_queue.try_recv(){
+          match event {
+            Event::BlockConnected { header, hash, height } => {
+              println!("block height:{height}");
+            },            
+            Event::BlockMatched { hash, header, height, transactions } =>{
+              let confirmations = tip - height + 1;
+              let payments = extract_user_payments(&mut addresses, transactions,height,received_payments.clone());     
             }
-            Event::FilterProcessed { block, height, matched, valid } => {
-                print!(".");
-                std::io::stdout().flush();
-            },    
-            _=>println!("Other events")
-        }        
-    }
+            _=>()        
+          } 
+        }       
+        thread::sleep(Duration::from_millis(100));        
+      }
 
+      Ok(())
+    });
 
-    Ok(())
+    Ok(handle)
+  }
 }
+
+fn extract_user_payments(receive_addresses:&mut Vec<ReceiveAddress>,transactions: Vec<Transaction>,block_height: u64,received_payments: Sender<ReceivedPayment>) {
+  for tx in transactions{
+    let tx_hash =  tx.txid().to_hex();
+    for txo in tx.output{    
+      let script = txo.script_pubkey;                                        
+      for i in 0..receive_addresses.len(){
+        let address_ptr=  receive_addresses.pop().unwrap(); 
+        if script.to_string() == address_ptr.address.script_pubkey().to_string() {
+          received_payments.send(ReceivedPayment{
+            address: address_ptr,
+            amount: txo.value,
+            block_height: block_height
+          });          
+          // println!("Your fund for address {receive_address} received: hash -> {tx_hash} confirmations: {confirmations}");
+        }                        
+      }                        
+    }                                   
+  }
+}
+
