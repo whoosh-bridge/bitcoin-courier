@@ -26,6 +26,7 @@ pub struct MasterKey{
   network: nakamoto::common::bitcoin::Network
 }
 
+
 impl MasterKey {
   pub fn new(seed: [u8; 32],network: nakamoto::common::bitcoin::Network)-> MasterKey{
       let secp = Secp256k1::new();
@@ -40,7 +41,6 @@ impl MasterKey {
 
   pub fn new_bitcoin_receive_address(&self,account_index: u32, address_index: u32) -> Address{
     let change: u32 = 0;
-    let account_index = 0;
     let coin_type= 0;
     let path = format!("m/44'/{coin_type}'/{account_index}'/{change}/{address_index}");
     let derivation_path = DerivationPath::from_str(&path).unwrap();
@@ -53,7 +53,7 @@ impl MasterKey {
     receive_address
   }
 
-  pub fn new_bitcoin_receive_qrcode(&self,bitcoin_address: Address,amount: u32, label: &str, message: &str)->String{      
+  pub fn new_bitcoin_receive_qrcode(bitcoin_address: Address,amount: &str, label: &str, message: &str)->String{      
       let uri = format!(
           "bitcoin:{}?amount={}&label={}&message={}",
           bitcoin_address, amount, label, message

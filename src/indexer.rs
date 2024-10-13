@@ -11,6 +11,7 @@ use nakamoto::common::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
 use nakamoto::common::bitcoin::{Address, KeyPair, PrivateKey, PublicKey, Script};
 use nakamoto::common::bitcoin_hashes::hex::ToHex;
 use nakamoto::common::{bitcoin::network::constants::ServiceFlags,network::Services};
+use serde::ser::SerializeStruct;
 use std::borrow::Borrow;
 use std::hash::Hash;
 use std::io::Write;
@@ -28,14 +29,63 @@ use crate::masterkey::MasterKey;
 use std::sync::Arc;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone)]
 pub struct ReceiveAddress{
-  script: Script,
-  address: Address
+  pub script: Script,
+  pub address: Address,
+  pub account_index: u32,
+  pub address_index: u32
+}
+
+impl  Serialize for ReceiveAddress {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer 
+        {
+          let mut state = serializer.serialize_struct("ReceiveAddress", 4)?;
+          state.serialize_field("script", &self.script.to_string())?;
+          state.serialize_field("address", &self.address.to_string())?;
+          state.serialize_field("account_index", &self.account_index)?;
+          state.serialize_field("address_index", &self.address_index)?;
+          state.end()
+        }
+}
+
+impl<'de> Deserialize<'de> for ReceiveAddress{
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de> {
+          #[derive(Deserialize)]
+          struct ReceiveAddressHelper {
+              script: String,
+              address: String,
+              account_index: u32,
+              address_index: u32,
+          }
+  
+           // Deserialize the fields into a helper struct
+        let helper = ReceiveAddressHelper::deserialize(deserializer)?;
+        // Convert the strings to the appropriate types
+        let script = Script::from_str(&helper.script).map_err(|_| {
+          serde::de::Error::custom(format!("Invalid script format: {}", helper.script.as_str()))
+        })?; // Handle error properly
+        let address = Address::from_str(&helper.address).map_err(|_|{
+          serde::de::Error::custom(format!("Invalid address format: {}", helper.address.as_str()))
+        })?; // Handle error properly
+        
+        std::result::Result::Ok(ReceiveAddress {
+            script,
+            address,
+            account_index: helper.account_index,
+            address_index: helper.address_index,
+        })
+          
+    }
 }
 
 
-#[derive(Clone)]
 pub struct ReceivedPayment{
   address: ReceiveAddress,
   amount: u64,
@@ -55,9 +105,7 @@ pub struct BitcoinListener{
 
 
 impl BitcoinListener{
-  pub fn new(network : nakamoto::common::bitcoin::Network) -> BitcoinListener{
-    
-    
+  pub fn new(network : nakamoto::common::bitcoin::Network) -> BitcoinListener{    
     BitcoinListener{
       network               
     }
@@ -101,6 +149,7 @@ impl BitcoinListener{
 
       loop{                
         if let Result::Ok(addr) = receive_addresses_ref.try_recv(){
+          watch_list.push(addr.script.clone());
           addresses.push(addr);
         }
         if let Result::Ok(event) = events_queue.try_recv(){

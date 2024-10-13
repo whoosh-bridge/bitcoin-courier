@@ -1,11 +1,13 @@
 extern crate redis;
 
 use anyhow::Ok;
+use nakamoto::common::bitcoin::{Address, Script};
 use redis::{Client, Commands, Connection};
+use serde_json::json;
 
-use crate::{enums::NetworkType, masterkey::MasterKey};
+use crate::{enums::NetworkType, indexer::ReceiveAddress, masterkey::MasterKey};
 
-struct Cache{
+pub struct Cache{
   client: Client,
   connection: Connection,
   masterkey:  MasterKey,
@@ -13,10 +15,13 @@ struct Cache{
   address_index: u32,
 }
 
+const MAX_ADDRESSES: u32 = 2^31;
+
+
 impl Cache{
-  pub fn initialize(network: NetworkType)->anyhow::Result<Cache>{
+  pub fn initialize(network: NetworkType,addr: String)->anyhow::Result<Cache>{
     let seed =*  b"Qu/E,.qp40ruLCX8GDSYlE2m?:I[|}5,";
-    let client = redis::Client::open("redis://156.255.1.32:6379")?;
+    let client = redis::Client::open(format!("redis://{}",addr))?;
     let mut connection = client.get_connection()?;
     let mut account_index = connection.get("LAST_ACCOUNT_INDEX").unwrap_or(0u32);
     let mut address_index = connection.get("LAST_ADDRESS_INDEX").unwrap_or(0u32);
@@ -31,7 +36,6 @@ impl Cache{
       NetworkType::Mainnet =>  nakamoto::common::bitcoin::Network::Bitcoin
     };
     let masterkey = MasterKey::new(seed, bitcoin_network);
-    masterkey.new_bitcoin_receive_address(0, 0);
 
     return Ok(Cache{
       masterkey,
@@ -42,17 +46,36 @@ impl Cache{
     })
   }
 
-  pub fn generate_payment_receive(&mut self)-> anyhow::Result<()>{    
-    let account_index = self.account_index;
-    let address_index = self.address_index;    
+  pub fn generate_payment_receive(&mut self)-> anyhow::Result<ReceiveAddress>{        
 
-    let receive_address = self.masterkey.new_bitcoin_receive_address(account_index, address_index);
-    let watchlist_address = receive_address.script_pubkey().clone();
+    let address = self.masterkey.new_bitcoin_receive_address(self.account_index, self.address_index);
+    let script = address.script_pubkey().clone();
     
-    redis::cmd("SET").arg("LAST_ACCOUNT_INDEX").arg(account_index).exec(&mut self.connection)?;
-    redis::cmd("SET").arg("LAST_ADDRESS_INDEX").arg(address_index).exec(&mut self.connection)?;
+    self.address_index = self.address_index + 1;
+    if self.address_index >= MAX_ADDRESSES {
+      self.account_index += 1;
+      self.address_index = 0;
+    }
 
-    Ok(())
+    let mut pipeline = redis::pipe();
+    pipeline.cmd("SET").arg("LAST_ACCOUNT_INDEX").arg(self.account_index);
+    pipeline.cmd("SET").arg("LAST_ADDRESS_INDEX").arg(self.address_index);
+    
+
+    let receive_address = ReceiveAddress{
+      script: script.clone(),
+      address,
+      account_index: self.account_index.clone(),
+      address_index: self.address_index.clone()
+    };
+    let k= format!("RECEIVE_ADDRESS_{}",script.to_string());
+    let v = json!(receive_address).to_string();
+    pipeline.cmd("SET").arg(k.clone()).arg(v);
+    pipeline.cmd("EXPIRE").arg(k).arg(3600); // The generated address is valid for 1 hour , 3600 seconds
+
+    pipeline.exec(&mut self.connection)?;
+    
+    Ok(receive_address)
   }
 
 }
