@@ -1,12 +1,8 @@
-struct Order{
-  
+struct Order {}
+
+struct OrderBook {
+    asks: Vec<Order>,
+    bids: Vec<Order>,
 }
 
-struct OrderBook{
-  asks: Vec<Order>,
-  bids: Vec<Order>
-}
-
-pub fn add_order(){
-
-}
+pub fn add_order() {}

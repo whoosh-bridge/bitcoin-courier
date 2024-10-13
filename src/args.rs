@@ -1,5 +1,5 @@
-use clap::Parser;
 use crate::enums::NetworkType;
+use clap::Parser;
 
 #[derive(Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"),
@@ -11,12 +11,11 @@ pub struct Args {
 
     /// Port to listen on.
     #[clap(short, long /*, env = "SERVER_PORT"*/, default_value = "3000") ]
-    pub port: u16,    
+    pub port: u16,
 
-    #[clap(value_enum, default_value = "testnet") ]
+    #[clap(value_enum, default_value = "testnet")]
     pub network: NetworkType,
 
     #[clap(short, long /*, env = "SERVER_PORT"*/, default_value = "156.255.1.32:6379") ]
-    pub redis: String,    
-
+    pub redis: String,
 }
