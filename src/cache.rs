@@ -1,7 +1,6 @@
 extern crate redis;
 
 use anyhow::Ok;
-use nakamoto::common::bitcoin::{Address, Script};
 use redis::{Client, Commands, Connection};
 use serde_json::json;
 
@@ -23,8 +22,8 @@ impl Cache{
     let seed =*  b"Qu/E,.qp40ruLCX8GDSYlE2m?:I[|}5,";
     let client = redis::Client::open(format!("redis://{}",addr))?;
     let mut connection = client.get_connection()?;
-    let mut account_index = connection.get("LAST_ACCOUNT_INDEX").unwrap_or(0u32);
-    let mut address_index = connection.get("LAST_ADDRESS_INDEX").unwrap_or(0u32);
+    let account_index = connection.get("LAST_ACCOUNT_INDEX").unwrap_or(0u32);
+    let address_index = connection.get("LAST_ADDRESS_INDEX").unwrap_or(0u32);
     // con.set("LAST_ACCOUNT_INDEX", account_index).context("Failed to read LAST_ACCOUNT_INDEX");
     // con.set("LAST_ADDRESS_INDEX", address_index).context("Failed to read LAST_ADDRESS_INDEX");
 

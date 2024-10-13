@@ -8,14 +8,12 @@ mod cache;
 
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Context, Ok, Result};
+use anyhow::{Ok, Result};
 use clap::Parser;
-use crossbeam::{channel::{unbounded,Sender}, queue::SegQueue};
-use indexer::{BitcoinListener,ReceivedPayment};
-use enums::{NetworkType,Token};
+use crossbeam::channel::unbounded;
+use indexer::BitcoinListener;
+use enums::NetworkType;
 use args::Args;
-use masterkey::MasterKey;
-use nakamoto::p2p::fsm::output::Connect;
 use crate::cache::Cache;
 use gateway::run_gateway;
 

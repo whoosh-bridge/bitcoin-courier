@@ -1,23 +1,9 @@
 type Reactor = nakamoto::net::poll::Reactor<net::TcpStream>;
-use nakamoto::chain::Transaction;
-use nakamoto::client::traits::Handle;
-use nakamoto::client::{Client, Config, Event, Network};
-use nakamoto::common::bitcoin::bech32::ToBase32;
-use nakamoto::common::bitcoin::secp256k1::ffi::Context;
-use nakamoto::common::bitcoin::secp256k1::{Secp256k1, SecretKey};
+use nakamoto::common::bitcoin::secp256k1::Secp256k1;
 use nakamoto::common::bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey};
-use nakamoto::common::bitcoin::{Address, KeyPair, PrivateKey, PublicKey};
-use nakamoto::common::bitcoin_hashes::hex::ToHex;
-use nakamoto::common::{bitcoin::network::constants::ServiceFlags,network::Services};
-use std::borrow::Borrow;
-use std::hash::Hash;
-use std::io::Write;
-use std::ops::{Add, RangeInclusive};
+use nakamoto::common::bitcoin::{Address, PublicKey};
 use std::str::FromStr;
-use std::thread;
 use std::net;
-use std::collections::HashSet;
-use anyhow::Result;
 
 pub struct MasterKey{
   seed: [u8; 32],

@@ -30,7 +30,7 @@ impl  MyBitcoinService {
 impl  BitcoinService for MyBitcoinService {
     async fn generate(&self,request: Request<ExchangeRequest>,) ->  Result<Response<PaymentUriReply>, Status> {
         let req = request.get_ref();
-        let mut receive_address;
+        let receive_address;
         let cache_ref = self.cache.clone();
         {            
             if let Result::Ok(mut cache) = cache_ref.lock() {
