@@ -4,7 +4,6 @@ mod enums;
 mod gateway;
 mod indexer;
 mod masterkey;
-mod orderbook;
 
 use std::sync::{Arc, Mutex};
 

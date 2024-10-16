@@ -3,7 +3,9 @@ use anyhow::{Ok, Result};
 use nakamoto::chain::Transaction;
 use nakamoto::client::traits::Handle;
 use nakamoto::client::{Client, Config, Event, Network};
-use nakamoto::common::bitcoin::{Address, Script};
+use nakamoto::common::bitcoin::blockdata::script::Builder;
+use nakamoto::common::bitcoin::secp256k1::{Message, Secp256k1, SecretKey};
+use nakamoto::common::bitcoin::{Address, OutPoint, PackedLockTime, Script, Sequence, TxIn, TxOut, Txid, Witness};
 use nakamoto::common::bitcoin_hashes::hex::ToHex;
 use nakamoto::common::network::Services;
 use serde::ser::SerializeStruct;
@@ -94,6 +96,65 @@ impl BitcoinListener {
         BitcoinListener { network }
     }
 
+    pub fn transfer(recipient_address: Address,amount: u64,signer: SecretKey){
+        // Example input from a previous transaction (UTXO)
+        
+        let txid = Txid::from_str("your_input_txid_here").unwrap();
+        let vout = 0;  // Index of the output in the UTXO
+
+        // Input script and sequence
+        let script_sig = Script::new();
+        todo!("Add signature to the input");
+        let sequence = Sequence::from_consensus(0xFFFFFFFF);
+
+        let txin = TxIn {
+            previous_output: OutPoint::new(txid, vout),
+            script_sig,
+            sequence,
+            witness: Witness::new(),
+        };
+
+        // // Example output to a recipient address
+        // let amount = 50_000;  // Amount in satoshis
+        // let recipient_address = Address::from_str("your_bitcoin_address_here").unwrap();
+        let script_pubkey = recipient_address.script_pubkey();
+
+        let txout = TxOut {
+            value: amount,
+            script_pubkey,
+        };
+
+        // Create the transaction
+        let tx = Transaction {
+            version: 1,
+            lock_time: PackedLockTime::ZERO,
+            input: vec![txin],
+            output: vec![txout],
+        };
+
+        // Signing the transaction
+        let secp = Secp256k1::new();
+
+        // Compute the signature hash for the input
+        let sighash = tx.signature_hash(0, &script_pubkey, 0);  // Adjust as needed
+        let msg = Message::from_slice(&sighash[..]).expect("32-byte hash");
+
+        let signature = secp.sign(&msg, &signer);
+
+        // Serialize the signature to DER format and append SIGHASH_ALL flag
+        let mut sig_with_sighash = signature.serialize_der().to_vec();
+        sig_with_sighash.push(0x01);  // Adding the SIGHASH_ALL flag
+
+        // Create the scriptSig: [signature] [public key]
+        let script_sig = Builder::new()
+            .push_slice(&sig_with_sighash)
+            .push_slice(&pubkey.serialize())
+            .into_script();
+
+        tx.input[0].script_sig = script_sig;
+        client.handle().submit_transaction(tx);
+    }
+
     pub fn run(
         &self,
         receive_addresses: Receiver<ReceiveAddress>,
@@ -113,6 +174,8 @@ impl BitcoinListener {
         let config = Config::new(config_network);
         let peers_thread = thread::spawn(|| client.run(config).unwrap());
         // Wait for the client to be connected to a peer.
+
+        
 
         let peers = client_handle.wait_for_peers(5, Services::default())?;
 
